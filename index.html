@@ -904,12 +904,14 @@
 
   // 手机应用：手机上装了对应 App 后，点击可尝试唤起（通过 URL Scheme）
   const apps = [
-    { name: "海大e卡通", desc: "校园卡·充值·消费", icon: "💳", bg: "linear-gradient(135deg,#34d399,#10b981)", scheme: "ecard://" },
-    { name: "天猫校园", desc: "校园生活购物", icon: "🛒", bg: "linear-gradient(135deg,#fbbf24,#f59e0b)", scheme: "tmall://" },
-    { name: "雨课堂", desc: "课堂互动·课件", icon: "🌧️", bg: "linear-gradient(135deg,#60a5fa,#3b82f6)", scheme: "yuketang://" },
-    { name: "知到", desc: "在线课程学习", icon: "💡", bg: "linear-gradient(135deg,#a3e635,#84cc16)", scheme: "zhihuishu://" },
-    { name: "闪动校园Pro", desc: "运动打卡·体测", icon: "🏃", bg: "linear-gradient(135deg,#fb7185,#f43f5e)", scheme: "shandongsport://" },
-    { name: "菜鸟驿站身份码", desc: "淘宝·取件身份码", icon: "📦", bg: "linear-gradient(135deg,#0ea5e9,#2563eb)", scheme: "taobao://" }
+    { name: "支付宝付款", desc: "扫码 · 付款码", icon: "💰", bg: "linear-gradient(135deg,#1677ff,#0958d9)", schemes: ["alipay://platformapi/startapp?appId=20000056", "alipays://platformapi/startapp?appId=20000056"] },
+    { name: "微信扫一扫", desc: "扫码 · 加好友", icon: "📷", bg: "linear-gradient(135deg,#22c55e,#16a34a)", schemes: ["weixin://scanqrcode", "weixin://"] },
+    { name: "海大e卡通", desc: "校园卡·充值·消费", icon: "💳", bg: "linear-gradient(135deg,#34d399,#10b981)", schemes: ["ecard://", "oucecard://"] },
+    { name: "天猫校园", desc: "校园生活购物", icon: "🛒", bg: "linear-gradient(135deg,#fbbf24,#f59e0b)", schemes: ["tmall://", "taobao://"] },
+    { name: "雨课堂", desc: "课堂互动·课件", icon: "🌧️", bg: "linear-gradient(135deg,#60a5fa,#3b82f6)", schemes: ["yuketang://"] },
+    { name: "知到", desc: "在线课程学习", icon: "💡", bg: "linear-gradient(135deg,#a3e635,#84cc16)", schemes: ["zhihuishu://", "zhidao://"] },
+    { name: "闪动校园Pro", desc: "运动打卡·体测", icon: "🏃", bg: "linear-gradient(135deg,#fb7185,#f43f5e)", schemes: ["shandongsport://"] },
+    { name: "菜鸟驿站身份码", desc: "淘宝·取件身份码", icon: "📦", bg: "linear-gradient(135deg,#0ea5e9,#2563eb)", schemes: ["cainiao://", "taobao://"] }
   ];
 
   function iconHTML(w) {
@@ -946,7 +948,7 @@
   function renderApp(list) {
     const g = document.getElementById("appGrid");
     g.innerHTML = list.map(w => `
-      <div class="card" data-name="${w.name}" data-app data-scheme="${w.scheme || ""}" data-icon="${w.icon}" data-bg="${w.bg}">
+      <div class="card" data-name="${w.name}" data-app data-schemes="${(w.schemes || []).join("|")}" data-icon="${w.icon}" data-bg="${w.bg}">
         ${iconHTML(w)}
         <span class="name">${w.name}</span>
         <span class="desc">${w.desc}</span>
@@ -968,37 +970,40 @@
     document.getElementById("appFailMask").classList.add("show");
   }
 
-  // App 卡片点击：尝试一次 URL Scheme，1.6 秒内未离开页面则视为失败并引导
-  document.getElementById("appGrid").addEventListener("click", e => {
-    const card = e.target.closest("[data-app]");
-    if (!card) return;
-    const name = card.dataset.name;
-    const scheme = card.dataset.scheme;
-    const icon = card.dataset.icon;
-    const bg = card.dataset.bg;
-    if (!scheme) { showAppFail(name, icon, bg); return; }
-
-    let opened = false;
-    const cleanup = () => {
-      document.removeEventListener("visibilitychange", markOpened);
-      window.removeEventListener("blur", markOpened);
-      window.removeEventListener("pagehide", markOpened);
-    };
-    const markOpened = () => { opened = true; cleanup(); };
-    document.addEventListener("visibilitychange", markOpened);
-    window.addEventListener("blur", markOpened);
-    window.addEventListener("pagehide", markOpened);
-
+  // App 卡片点击：依次尝试多个 URL Scheme，全部失败才引导（全程不读取应用列表）
+  function fireScheme(scheme) {
     try {
       const a = document.createElement("a");
       a.href = scheme; a.style.display = "none";
       document.body.appendChild(a); a.click(); a.remove();
-    } catch (err) {}
-
-    setTimeout(() => {
-      cleanup();
-      if (!opened && document.visibilityState === "visible") showAppFail(name, icon, bg);
-    }, 1600);
+    } catch (e) {}
+  }
+  function attemptScheme(scheme) {
+    return new Promise(resolve => {
+      let left = false;
+      const onVis = () => { if (document.hidden) left = true; };
+      document.addEventListener("visibilitychange", onVis);
+      fireScheme(scheme);
+      setTimeout(() => {
+        document.removeEventListener("visibilitychange", onVis);
+        resolve(!left && !document.hidden);
+      }, 750);
+    });
+  }
+  document.getElementById("appGrid").addEventListener("click", async e => {
+    const card = e.target.closest("[data-app]");
+    if (!card) return;
+    if (card.dataset.busy === "1") return;
+    card.dataset.busy = "1";
+    const name = card.dataset.name, icon = card.dataset.icon, bg = card.dataset.bg;
+    const schemes = (card.dataset.schemes || "").split("|").filter(Boolean);
+    let ok = false;
+    for (const s of schemes) {
+      const failed = await attemptScheme(s);
+      if (!failed) { ok = true; break; }
+    }
+    delete card.dataset.busy;
+    if (!ok) showAppFail(name, icon, bg);
   });
 
   document.getElementById("afClose").addEventListener("click", () => document.getElementById("appFailMask").classList.remove("show"));
@@ -2279,6 +2284,19 @@
       }
     }
   });
+
+  // 手机端：打开即定位到「我的课表」，保证第一眼看到课表
+  (function openAtSchedule() {
+    const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 720;
+    if (!mobile || location.hash) return;
+    const go = () => {
+      const el = document.getElementById("sec-schedule");
+      if (!el) return;
+      window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 8);
+    };
+    requestAnimationFrame(() => setTimeout(go, 60));
+    window.addEventListener("load", go, { once: true });
+  })();
 
   /* ============ 本机课表备份 / 恢复 ============ */
   document.getElementById("btnBackupExport").addEventListener("click", () => {
