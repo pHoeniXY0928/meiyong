@@ -347,7 +347,7 @@
   }
   .sched-table td.period .p-time { display: block; font-size: 10px; font-weight: 800; color: var(--text-dim); }
   .sched-table td.period .p-label { display: block; font-size: 8.5px; color: var(--text-faint); margin-top: 1px; }
-  .sched-table tr.half { height: 46px; }
+  .sched-table tr.half { height: 28px; }
   .sched-table td.cell {
     background: var(--card); border: 1px solid var(--stroke);
     border-radius: 10px; vertical-align: top; height: auto;
@@ -373,8 +373,8 @@
     word-break: break-all;
   }
   .course .cname { font-weight: 700; font-size: 12px; line-height: 1.25;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-  .course .croom { opacity: .92; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .course .croom { opacity: .92; font-size: 11px; white-space: normal; word-break: break-all; overflow: visible; text-overflow: clip; line-height: 1.1; }
 
   /* 课程配色：黑夜=低饱和深色底+浅字；白天=低饱和浅色底+深字（保证辨识度） */
   .c0  { --c1:#2e3f63; --c2:#24334f; }
@@ -813,7 +813,7 @@
     <div class="af-icon" id="afIcon">📱</div>
     <h4 id="afTitle">无法打开应用</h4>
     <div class="af-steps" id="afSteps"></div>
-    <div class="af-note">有可能是没有安装相应软件哦</div>
+    <div class="af-note">有可能没有开放权限哦</div>
     <div class="actions">
       <button class="btn ghost" id="afClose" style="flex:1;justify-content:center;">知道了</button>
     </div>
@@ -899,18 +899,32 @@
       icon: "✍️",
       bg: "linear-gradient(135deg,#f472b6,#ec4899)",
       type: "public"
+    },
+    {
+      name: "海大e卡通",
+      desc: "校园卡·充值·消费",
+      url: "https://vcard.ouc.edu.cn/",
+      icon: "💳",
+      bg: "linear-gradient(135deg,#34d399,#10b981)",
+      type: "public"
+    },
+    {
+      name: "AI教学中心",
+      desc: "在线课程学习",
+      url: "https://login.zhihuishu.com/?origin=zhs&service=https%3A%2F%2Fonlineservice-api.zhihuishu.com%2Fgateway%2Ff%2Fv1%2Flogin%2Fgologin%3Ffromurl%3Dhttps%253A%252F%252Fonlineh5.zhihuishu.com%252FonlineWeb.html%2523%252FstudentIndex",
+      icon: "💡",
+      bg: "linear-gradient(135deg,#a3e635,#84cc16)",
+      type: "public"
     }
   ];
 
   // 手机应用：手机上装了对应 App 后，点击可尝试唤起（通过 URL Scheme）
   const apps = [
     { name: "支付宝付款", desc: "扫码 · 付款码", icon: "💰", bg: "linear-gradient(135deg,#1677ff,#0958d9)", schemes: ["alipay://platformapi/startapp?appId=20000056", "alipays://platformapi/startapp?appId=20000056"] },
-    { name: "微信扫一扫", desc: "扫码 · 加好友", icon: "📷", bg: "linear-gradient(135deg,#22c55e,#16a34a)", schemes: ["weixin://scanqrcode", "weixin://"] },
-    { name: "海大e卡通", desc: "校园卡·充值·消费", icon: "💳", bg: "linear-gradient(135deg,#34d399,#10b981)", schemes: ["ecard://", "oucecard://"] },
-    { name: "天猫校园", desc: "校园生活购物", icon: "🛒", bg: "linear-gradient(135deg,#fbbf24,#f59e0b)", schemes: ["tmall://", "taobao://"] },
-    { name: "雨课堂", desc: "课堂互动·课件", icon: "🌧️", bg: "linear-gradient(135deg,#60a5fa,#3b82f6)", schemes: ["yuketang://"] },
-    { name: "知到", desc: "在线课程学习", icon: "💡", bg: "linear-gradient(135deg,#a3e635,#84cc16)", schemes: ["zhihuishu://", "zhidao://"] },
-    { name: "闪动校园Pro", desc: "运动打卡·体测", icon: "🏃", bg: "linear-gradient(135deg,#fb7185,#f43f5e)", schemes: ["shandongsport://"] },
+    { name: "微信扫一扫", desc: "扫码 · 加好友", icon: "📷", bg: "linear-gradient(135deg,#22c55e,#16a34a)", schemes: ["weixin://scanqrcode"] },
+    { name: "天猫校园", desc: "校园生活购物", icon: "🛒", bg: "linear-gradient(135deg,#fbbf24,#f59e0b)", href: "jump.html?app=tmall" },
+    { name: "雨课堂", desc: "课堂互动·课件", icon: "🌧️", bg: "linear-gradient(135deg,#60a5fa,#3b82f6)", href: "jump.html?app=yuketang" },
+    { name: "闪动校园Pro", desc: "运动打卡·体测", icon: "🏃", bg: "linear-gradient(135deg,#fb7185,#f43f5e)", href: "jump.html?app=shandong" },
     { name: "菜鸟驿站身份码", desc: "淘宝·取件身份码", icon: "📦", bg: "linear-gradient(135deg,#0ea5e9,#2563eb)", schemes: ["cainiao://", "taobao://"] }
   ];
 
@@ -948,7 +962,7 @@
   function renderApp(list) {
     const g = document.getElementById("appGrid");
     g.innerHTML = list.map(w => `
-      <div class="card" data-name="${w.name}" data-app data-schemes="${(w.schemes || []).join("|")}" data-icon="${w.icon}" data-bg="${w.bg}">
+      <div class="card" data-name="${w.name}" data-app data-schemes="${(w.schemes || []).join("|")}" data-href="${w.href || ""}" data-icon="${w.icon}" data-bg="${w.bg}">
         ${iconHTML(w)}
         <span class="name">${w.name}</span>
         <span class="desc">${w.desc}</span>
@@ -996,6 +1010,8 @@
     if (card.dataset.busy === "1") return;
     card.dataset.busy = "1";
     const name = card.dataset.name, icon = card.dataset.icon, bg = card.dataset.bg;
+    const href = card.dataset.href;
+    if (href) { location.href = href; return; }
     const schemes = (card.dataset.schemes || "").split("|").filter(Boolean);
     let ok = false;
     for (const s of schemes) {
