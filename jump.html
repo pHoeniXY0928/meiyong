@@ -137,11 +137,17 @@ function showFail() {
   $("tips").style.display = isMobile ? "block" : "none";
   let html = "";
   if (app.web) html += `<a class="btn primary" href="${app.web}" target="_blank" rel="noopener">打开网页版</a>`;
+  if (!app.mini) html += `<button class="btn ghost" id="copyName">复制名称并打开微信</button>`;
   html += `<button class="btn ghost" id="retry">再试一次</button>`;
   html += `<a class="btn ghost" href="index.html">返回</a>`;
   $("actions").innerHTML = html;
   const r = $("retry");
   if (r) r.addEventListener("click", () => { location.href = "jump.html?app=" + key; });
+  const cp = $("copyName");
+  if (cp) cp.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(app.name); } catch (e) {}
+    location.href = "weixin://";
+  });
 }
 
 function fire(scheme) {
@@ -170,6 +176,11 @@ function attempt(scheme) {
 
 async function go() {
   if (!isMobile) { showFail(); return; }
+  if (app.mini) {
+    try { location.href = app.mini; } catch (e) {}
+    setTimeout(() => { if (document.visibilityState === "visible") showFail(); }, 2600);
+    return;
+  }
   if (isAndroid && app.pkg) {
     const back = location.origin + location.pathname + "?app=" + encodeURIComponent(key) + "&fail=1";
     const intent = "intent://#Intent;package=" + app.pkg + ";S.browser_fallback_url=" + encodeURIComponent(back) + ";end";
