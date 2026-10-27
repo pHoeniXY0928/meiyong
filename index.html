@@ -1265,13 +1265,16 @@
     return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
   }
 
-  // 上课地点：只保留四位阿拉伯数字（省略「楼/区」二字与括号）
+  // 上课地点：只保留阿拉伯数字（省略「楼/区」二字与括号）；支持 213,217 这类多教室
   function cleanRoom(room) {
     if (!room) return "";
-    const four = String(room).match(/\d{4}/);
-    if (four) return four[0];
-    const any = String(room).match(/\d{2,5}/);
-    return any ? any[0] : String(room).replace(/[^\d]/g, "");
+    const s = String(room)
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/[，、；;／/]/g, ",");
+    const nums = (s.match(/\d{2,5}/g) || []).map(n => (n.length === 5 && /^[1-3]/.test(n)) ? n.slice(1) : n);
+    if (!nums.length) return "";
+    const four = nums.filter(n => n.length === 4);
+    return (four.length ? four : nums).join(",");
   }
 
   // 视图切换按钮（表格 ↔ 列表）
@@ -1545,6 +1548,40 @@
     ctx.putImageData(img, 0, 0);
   }
 
+  // 灰度 + 对比度拉伸：截图发灰、模糊、压缩严重时，先把动态范围拉满，显著提升低清晰度识别率
+  function enhanceCanvas(canvas) {
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const d = img.data, n = d.length / 4;
+    const lum = new Uint8Array(n);
+    let min = 255, max = 0;
+    for (let p = 0, q = 0; p < d.length; p += 4, q++) {
+      const g = (0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2]) | 0;
+      lum[q] = g;
+      if (g < min) min = g;
+      if (g > max) max = g;
+    }
+    const range = Math.max(1, max - min);
+    for (let p = 0, q = 0; p < d.length; p += 4, q++) {
+      const g = ((lum[q] - min) * 255 / range) | 0;
+      d[p] = d[p + 1] = d[p + 2] = g;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  // 低清晰度兜底：把画布放大后重新识别（Tesseract 对小字更友好）
+  function upscaleCanvas(canvas, factor, maxEdge) {
+    const s = Math.min(factor, maxEdge / Math.max(canvas.width, canvas.height));
+    const w = Math.max(1, Math.round(canvas.width * s));
+    const h = Math.max(1, Math.round(canvas.height * s));
+    const out = document.createElement("canvas");
+    out.width = w; out.height = h;
+    const ctx = out.getContext("2d");
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(canvas, 0, 0, w, h);
+    return out;
+  }
+
   function collectWords(result) {
     const words = [];
     const blocks = result.data.blocks || [];
@@ -1689,7 +1726,7 @@
       (cellWords[day + "-" + period] = cellWords[day + "-" + period] || []).push(w);
     });
 
-    const isRoomToken = t => /楼|馆|区|操场|机房|教室|实验室/.test(t) || /^[（(]?\d{2,5}[)）,，、]?$/.test(t);
+    const isRoomToken = t => /楼|馆|区|操场|机房|教室|实验室|中心|训练|基地/.test(t) || /^[（(]?\d{2,5}[)）,，、]?$/.test(t);
 
     const courses = [];
     Object.keys(cellWords).forEach(key => {
@@ -1711,12 +1748,14 @@
       });
       let name = nameParts.join("");
       let room = roomParts.join("").replace(/[()（）]/g, "").trim();
-      // "教学楼6区6218" → "教学楼6区(6218)"；纯数字保持原样
-      room = room.replace(/([楼馆区])(\d{3,6})$/, "$1($2)");
+      room = cleanRoom(room);
       name = name
         .replace(/第?\d+周/g, "").replace(/周/g, "")
         .replace(/-\d+[\d.]*/g, "")
         .replace(/[,，、;；:：.。·'‘’"“”|｜@#%^&*+=\[\]{}<>~]/g, "")
+        .replace(/^[图田回口◎○●＋+]+/, "")
+        .replace(/([\u4e00-\u9fa5])[a-z]{1,3}(?=[\u4e00-\u9fa5])/g, "$1")
+        .replace(/(?:教学楼|实验楼|综合楼|楼|区)[\d区]*$/, "")
         .trim();
       if (!name) return;
       if ([...name].filter(c => /[一-龥A-Za-z]/.test(c)).length < 2) return;
@@ -1935,7 +1974,7 @@
         room = s.slice(start).replace(/[楼馆区操场机房]/g, "");
       }
     }
-    name = name.replace(/(?:教学楼|实验楼|综合楼|图书馆|体育馆|机房|楼|馆|区)\s*\d*\s*区?\s*$/, "").replace(/^[^一-龥A-Za-z]+/, "").replace(/[（(]\s*$/, "").replace(/[，,、;；:：.。·]+$/, "").trim();
+    name = name.replace(/(?:教学楼|实验楼|综合楼|图书馆|体育馆|机房|楼|馆|区)\s*\d*\s*区?\s*$/, "").replace(/^[^一-龥A-Za-z]+/, "").replace(/^[图田回口◎○●＋+]+/, "").replace(/[（(]\s*$/, "").replace(/[，,、;；:：.。·]+$/, "").trim();
     if (!name) return null;
     if ([...name].filter(c => /[一-龥A-Za-z]/.test(c)).length < 2) return null;
     if (/[^\u4e00-\u9fa5A-Za-z0-9()\u2160-\u217F]/.test(name)) return null;
@@ -2036,6 +2075,25 @@
 
   /* ---------- 主识别入口 ---------- */
 
+  // 粗略质量评分：名字干净、房间号规整则加分；用于两遍识别择优
+  function scoreCourses(cs) {
+    if (!cs || !cs.length) return -1;
+    let s = 0;
+    cs.forEach(c => {
+      const n = c.name || "";
+      const cjk = [...n].filter(ch => /[\u4e00-\u9fa5]/.test(ch)).length;
+      const latin = (n.match(/[A-Za-z]/g) || []).length;
+      if (cjk >= 4) s += 2;
+      else if (cjk >= 2) s += 1;
+      else s -= 2;
+      if (latin > 2) s -= 1;
+      if (n.length > 14) s -= 1;
+      if (/[楼区馆]/.test(n)) s -= 1;
+      if (/^\d{2,4}(,\d{2,4})*$/.test(c.room || "")) s += 1;
+    });
+    return s;
+  }
+
   async function handleFile(file) {
     if (!file.type.startsWith("image/")) { toast("请上传图片文件"); return; }
     ocrStatus.classList.add("show");
@@ -2049,12 +2107,13 @@
       const norm = normalizeImage(img, window.innerWidth < 720 ? 1500 : 2000);
       // 深色主题截图先反相，统一成「浅底深字」再识别
       if (meanLumOf(norm.canvas) < 110) invertCanvas(norm.canvas);
+      if (location.search.includes("enh")) enhanceCanvas(norm.canvas);
       const src = norm.canvas.toDataURL("image/png");
 
       ocrStatusText.textContent = "正在识别课表…";
       const result = await worker.recognize(src, {}, { blocks: true });
       const words = collectWords(result);
-      const grid = locateGrid(words);
+      let grid = locateGrid(words);
 
       let courses = [];
       if (grid) {
@@ -2078,8 +2137,32 @@
         courses = parseSchedule(result.data.text || "");
       }
 
+      // 质量评分：结果为空或明显太差时，用「增强 + 放大」再识别一遍，择优保留
+      let bestScore = scoreCourses(courses);
+      if (bestScore < courses.length * 2) {
+        try {
+          ocrStatusText.textContent = "正在做一次增强识别…";
+          const big = upscaleCanvas(norm.canvas, 1.6, 2600);
+          enhanceCanvas(big);
+          await worker.setParameters({ tessedit_pageseg_mode: "6" });
+          const r2 = await worker.recognize(big.toDataURL("image/png"), {}, { blocks: true });
+          await worker.setParameters({ tessedit_pageseg_mode: "3" });
+          const w2 = collectWords(r2);
+          const g2 = locateGrid(w2);
+          if (g2) {
+            const c2 = parseScheduleByLayout(w2, g2);
+            const s2 = scoreCourses(c2);
+            if (s2 > bestScore) { courses = c2; bestScore = s2; words.length = 0; words.push(...w2); grid = g2; }
+          }
+        } catch (e2) {
+          console.warn("增强识别失败：", e2);
+          try { await worker.setParameters({ tessedit_pageseg_mode: "3" }); } catch (e3) {}
+        }
+      }
+
       const meta = grid ? extractMeta(words, grid) : null;
       pendingCourses = courses.slice(0, 80);
+      if (location.search.includes("diag")) window.__ocrResult = pendingCourses;
       pendingMeta = meta;
       showOcrReview();
       ocrStatusText.textContent = pendingCourses.length
@@ -2283,6 +2366,11 @@
     if (btn.dataset.view === "schedule") btn.addEventListener("click", preloadOCR);
   });
   if (location.search.includes("diag")) preloadOCR();
+  // 首屏空闲即静默预热识别引擎：用户真正上传时不必再等 9MB 引擎加载
+  try {
+    if ("requestIdleCallback" in window) requestIdleCallback(() => preloadOCR(), { timeout: 4000 });
+    else setTimeout(() => preloadOCR(), 1200);
+  } catch (e) { setTimeout(() => preloadOCR(), 1500); }
 
   // 直接 Ctrl+V 粘贴截图即可识别（单页，无需切换视图）
   document.addEventListener("paste", e => {
